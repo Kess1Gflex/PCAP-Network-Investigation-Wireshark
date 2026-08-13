@@ -355,10 +355,6 @@ The evidence showed:
 8. Subsequent session-associated requests occurred
 ```
 
-### Screenshot
-
-<img src="screenshots/07-portal-analysis.png" width="900">
-
 ### Analyst Observation
 
 The external communication was directly associated with the portal's application flow.
