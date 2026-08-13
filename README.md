@@ -108,8 +108,27 @@ The server responded:
 
 ```text
 HTTP/1.1 200 OK
-Content-Type: text/html
 ```
+
+The HTTP response contained the following relevant fields:
+
+```text
+Server: nginx
+Content-Type: text/html; charset=UTF-8
+Content-Length: 284
+Connection: keep-alive
+X-Request-ID: 7f31
+```
+
+The response was associated with the request in Frame 12 and was received approximately 25 milliseconds after the request.
+
+The full request URI was:
+
+```text
+http://secure-portal.training.test/portal/
+```
+
+The response also contained 284 bytes of file data.
 
 ### Screenshot
 
@@ -117,9 +136,11 @@ Content-Type: text/html
 
 ### Analyst Observation
 
-The portal page was successfully retrieved.
+The workstation successfully retrieved the `/portal/` resource and received a valid HTTP `200 OK` response containing HTML content.
 
-At this stage, the traffic did not provide sufficient evidence to classify the portal itself as malicious.
+The response identified **nginx** as the web server and included an application-level `X-Request-ID` value (`7f31`), which could potentially support correlation with application-side logs if such evidence were available.
+
+At this stage, the observed HTTP response did not provide sufficient evidence to classify the portal itself as malicious. Further investigation of subsequent network activity was required.
 
 ---
 
