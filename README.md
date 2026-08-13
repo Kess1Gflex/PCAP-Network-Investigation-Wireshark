@@ -2,35 +2,35 @@
 
 ## Project Overview
 
-This repository documents a network traffic investigation performed using **Wireshark** and a simulated PCAP dataset.
+This project documents a network traffic investigation performed using **Wireshark** and a simulated PCAP dataset.
 
-The objective was to determine whether a user's interaction with a web portal resulted in communication with a potentially suspicious external destination.
+The investigation examines whether an employee's interaction with a company web portal led to suspicious communication with an external destination.
 
-The investigation focused on reconstructing the relevant network conversations, analyzing TCP and HTTP traffic, identifying the communicating hosts, correlating application-layer artifacts, and determining whether the available evidence was sufficient to classify the activity as malicious.
+The analysis focuses on reconstructing the network conversation, inspecting TCP and HTTP traffic, examining application-layer data, and correlating multiple pieces of evidence to determine what happened.
 
-This project simulates a **Tier 1 SOC Analyst** investigating potentially suspicious web activity.
+This project simulates a **Tier 1 SOC Analyst investigation**.
 
 ---
 
 ## Scenario
 
-An employee named **Sarah** accessed a web portal, after which her workstation communicated with several external destinations.
+An employee named **Sarah** accessed a company web portal. Shortly afterward, her workstation communicated with another external host.
 
 The investigation sought to answer:
 
-> **Did Sarah's interaction with the portal lead to suspicious external communication, and should the activity be investigated further?**
+> **Did Sarah's interaction with the portal lead to suspicious external communication, and does the activity require further investigation?**
 
 ---
 
 ## Investigation Workflow
 
 1. Identify Sarah's workstation.
-2. Isolate relevant network traffic.
-3. Identify external destinations.
-4. Reconstruct TCP conversations.
-5. Analyze HTTP requests and responses.
-6. Identify domains and application behavior.
-7. Correlate the observed activity and assess whether it is suspicious.
+2. Isolate the relevant network traffic.
+3. Identify the communicating hosts.
+4. Reconstruct the TCP and HTTP conversations.
+5. Inspect the portal response and application data.
+6. Follow the subsequent external communication.
+7. Correlate the activity and assess its significance.
 8. Determine what additional evidence would be required for a higher-confidence verdict.
 
 ---
@@ -64,15 +64,17 @@ Filtering traffic originating from this address revealed several destinations:
 
 <img src="screenshots/01-sarah-ip-filter.png" width="900">
 
-### Analyst Observation
+### Finding
 
-Multiple conversations originated from Sarah's workstation. The investigation focused on reconstructing these conversations rather than treating every external IP as suspicious by default.
+Multiple conversations originated from Sarah's workstation.
+
+At this stage, the external IP addresses were treated as destinations requiring investigation rather than being classified as malicious based solely on their addresses.
 
 ---
 
 # Step 2: Analyze the Initial Connection
 
-One of the first external connections identified was:
+One of the initial external connections identified was:
 
 ```text
 192.168.56.20:49152
@@ -90,9 +92,11 @@ SYN → SYN/ACK → ACK
 
 <img src="screenshots/02-tcp-handshake.png" width="900">
 
-### Analyst Assessment
+### Finding
 
-The TCP handshake was normal. The investigation therefore moved to the application layer to determine what the connection was actually being used for.
+The TCP connection was successfully established.
+
+The handshake itself showed normal TCP connection establishment, so the investigation moved to the application layer to determine what the connection was being used for.
 
 ---
 
@@ -110,7 +114,7 @@ The server responded:
 HTTP/1.1 200 OK
 ```
 
-The HTTP response contained the following relevant fields:
+Relevant response fields included:
 
 ```text
 Server: nginx
@@ -120,7 +124,7 @@ Connection: keep-alive
 X-Request-ID: 7f31
 ```
 
-The response was associated with the request in Frame 12 and was received approximately 25 milliseconds after the request.
+The response was associated with the request in Frame 12 and arrived approximately 25 milliseconds after the request.
 
 The full request URI was:
 
@@ -128,19 +132,17 @@ The full request URI was:
 http://secure-portal.training.test/portal/
 ```
 
-The response contained 284 bytes of HTML file data.
+The response contained **284 bytes of HTML data**.
 
 ### Screenshot
 
 <img src="screenshots/03-portal-request.png" width="900">
 
-### Analyst Observation
+### Finding
 
-The workstation successfully retrieved the `/portal/` resource and received a valid HTTP `200 OK` response containing HTML content.
+The workstation successfully retrieved the portal page.
 
-The response identified **nginx** as the web server and included an application-level `X-Request-ID` value (`7f31`), which could potentially support correlation with application-side logs if such evidence were available.
-
-Inspection of the HTML response body revealed a `Continue` link pointing to:
+Inspecting the HTML payload revealed a `Continue` link pointing to:
 
 ```text
 http://account-check.training.test/verify
@@ -152,19 +154,17 @@ The relevant HTML was:
 <a href="http://account-check.training.test/verify">Continue</a>
 ```
 
-### Analyst Assessment
+The portal therefore contained a direct reference to an external verification endpoint.
 
-The portal contained a direct reference to an external verification service.
+At this point, however, the HTML only showed that the portal **could direct the user to the endpoint**. It did not yet prove that the workstation actually made that request.
 
-However, at this stage, the presence of a link only established that the portal **could direct the user toward** the external service. It did not yet establish that the workstation actually followed the link or what occurred afterward.
-
-The investigation therefore continued by examining subsequent network traffic.
+The investigation therefore continued into the subsequent network traffic.
 
 ---
 
 # Step 4: Identify the Verification Request
 
-A subsequent TCP connection was established between:
+A subsequent connection was established between:
 
 ```text
 192.168.56.20:49154
@@ -195,35 +195,19 @@ http://secure-portal.training.test/portal/
 
 <img src="screenshots/04-verify-request.png" width="900">
 
-### Analyst Observation
+### Finding
 
-The workstation subsequently requested the exact `/verify` resource that had been identified within the portal's HTML.
+The workstation requested the same `/verify` endpoint that was identified in the portal's HTML.
 
-The `Referer` header also pointed back to:
+The `Referer` header also pointed back to the original portal:
 
 ```text
 http://secure-portal.training.test/portal/
 ```
 
-This provided an additional correlation between the portal page and the external verification request.
+This established a direct relationship between the portal and the subsequent external request.
 
-### Analyst Assessment
-
-The evidence now established more than simply the existence of two communicating hosts.
-
-The PCAP showed:
-
-```text
-Portal HTML
-     ↓
-/verify link
-     ↓
-Workstation requests /verify
-```
-
-This supported the conclusion that the external request was part of the portal's observed application flow.
-
-The investigation then examined the response to determine what happened after the verification request.
+The investigation could now move beyond simply identifying the destination and examine what happened after the request.
 
 ---
 
@@ -246,21 +230,25 @@ http://account-check.training.test/session/start
 
 <img src="screenshots/05-http-redirect.png" width="900">
 
-### Analyst Observation
+### Finding
 
-The external server responded to `/verify` with an HTTP `302 Found` response and directed the client to:
+The external server redirected the workstation from:
+
+```text
+/verify
+```
+
+to:
 
 ```text
 /session/start
 ```
 
-### Analyst Assessment
+A `302` redirect is normal HTTP behavior and is not inherently malicious.
 
-The redirect confirmed that the external server directed the client from `/verify` to `/session/start`.
+Its significance depends on what occurred before and after the redirect.
 
-A `302` response is normal HTTP behavior and is not inherently malicious. Its significance depends on the broader sequence of activity.
-
-The investigation therefore continued by examining the subsequent session activity.
+The investigation therefore continued by following the resulting session activity.
 
 ---
 
@@ -272,14 +260,14 @@ The workstation followed the redirect:
 GET /session/start HTTP/1.1
 ```
 
-The server responded with:
+The server responded:
 
 ```text
 HTTP/1.1 200 OK
 Set-Cookie: sid=4d7c2a
 ```
 
-The same session identifier was subsequently observed in requests including:
+The same session identifier was subsequently observed in:
 
 ```text
 GET /pixel.gif?sid=4d7c2a
@@ -296,9 +284,9 @@ GET /assets/check.js
 
 <img src="screenshots/06-session-activity.png" width="900">
 
-### Analyst Observation
+### Finding
 
-The traffic could be reconstructed as:
+The HTTP conversation could be reconstructed as:
 
 ```text
 /verify
@@ -316,66 +304,65 @@ Session Cookie
 /session/ping?id=4d7c2a
 ```
 
-The repeated session identifier provided evidence that these requests were related to the same application/session activity.
+The repeated session identifier showed that these requests were associated with the same application session.
 
-### Analyst Assessment
+The PCAP therefore showed a continuous application-layer sequence rather than an isolated connection.
 
-The PCAP demonstrated that the workstation did not simply contact the external host once.
-
-The `/verify` request resulted in a redirect, followed by session establishment and subsequent session-associated requests.
-
-This established a coherent application-layer sequence that could be reconstructed from the captured traffic.
-
-However, the observed session behavior alone did not establish whether the activity was legitimate or malicious.
+However, the session behavior itself did not establish whether the activity was legitimate or malicious.
 
 ---
 
 # Step 7: Correlate the Portal and External Activity
 
-At this stage, the individual pieces of evidence were correlated to reconstruct the observed application flow.
-
-The evidence showed:
+The evidence collected throughout the investigation can now be combined into a single sequence:
 
 ```text
-1. Workstation accessed the portal
-          ↓
-2. Portal returned HTML
-          ↓
-3. HTML contained a link to
-   account-check.training.test/verify
-          ↓
-4. Workstation requested /verify
-          ↓
-5. External server returned 302
-          ↓
-6. Client followed /session/start
-          ↓
-7. Session was established
-          ↓
-8. Subsequent session-associated requests occurred
+Sarah's workstation
+        ↓
+secure-portal.training.test/portal/
+        ↓
+Portal returns HTML
+        ↓
+HTML contains /verify link
+        ↓
+Workstation requests /verify
+        ↓
+account-check.training.test
+        ↓
+302 Redirect
+        ↓
+/session/start
+        ↓
+Session established
+        ↓
+Additional session-associated requests
 ```
 
-### Analyst Observation
+### Screenshot
 
-The external communication was directly associated with the portal's application flow.
+<img src="screenshots/07-portal-analysis.png" width="900">
 
-The relationship was supported by multiple independent artifacts:
+### Finding
+
+Multiple independent artifacts support the relationship between the portal and the external destination:
 
 * The portal HTML contained the `/verify` link.
 * The workstation subsequently requested `/verify`.
 * The `Referer` header pointed back to `/portal/`.
 * The external server redirected the client to `/session/start`.
-* A session identifier was established and subsequently reused.
+* A session identifier was established and reused in subsequent requests.
 
-### Analyst Assessment
+This means the external communication was not simply an unrelated connection that happened after Sarah visited the portal.
 
-The evidence supports the conclusion that the communication with `account-check.training.test` was not merely an unrelated external connection occurring after the portal visit.
+The PCAP demonstrates a connected application flow between the portal and the external verification endpoint.
 
-Instead, the PCAP demonstrates a connected application flow between the portal and the external verification service.
+### Assessment
 
-However, the available network evidence does **not independently establish malicious intent**.
+The activity is **suspicious enough to warrant further investigation**, but the PCAP does not establish malicious intent on its own.
 
-The destination could represent legitimate third-party functionality, suspicious infrastructure, or malicious infrastructure. Additional evidence would be required to make that determination with higher confidence.
+The observed behavior could represent legitimate application functionality, suspicious infrastructure, or malicious activity.
+
+Additional evidence would be required to distinguish between these possibilities.
 
 ---
 
@@ -401,33 +388,31 @@ The destination could represent legitimate third-party functionality, suspicious
 
 # Final Analyst Verdict
 
-### **Suspicious — Further Investigation Recommended**
+## **Suspicious — Further Investigation Recommended**
 
-The PCAP demonstrates a connected application flow between Sarah's workstation, the internal portal, and `account-check.training.test`.
+The PCAP demonstrates a connected application flow between Sarah's workstation, the company portal, and `account-check.training.test`.
 
 The portal returned HTML containing a direct link to the external `/verify` endpoint. The workstation subsequently accessed that endpoint, received a redirect to `/session/start`, established a session, and generated additional session-associated requests.
 
-This behavior warrants further investigation because the PCAP establishes a meaningful relationship between the portal and the external service.
+The relationship between the portal and the external destination is therefore **confirmed by network evidence**.
 
-However, **the PCAP alone does not establish that the external destination is malicious.**
+However, the available PCAP does not provide enough evidence to classify the destination as definitively malicious.
 
 ### Current Confidence
 
 **Inconclusive from PCAP alone**
 
-This distinction is important:
+The appropriate Tier 1 response is therefore to **escalate for additional investigation rather than close the activity as benign or declare it confirmed malicious.**
 
 > **Unknown does not mean benign, and suspicious does not automatically mean malicious.**
-
-The available evidence supports escalation for additional analysis rather than a definitive malicious classification.
 
 ---
 
 # Further Investigation Opportunities
 
-If the investigation were continued, the identified indicators could be enriched using:
+If the investigation were continued, the identified indicators could be correlated with additional evidence such as:
 
-* Domain and IP reputation services
+* Domain and IP reputation
 * DNS and passive DNS history
 * WHOIS/registration information
 * Proxy and firewall logs
@@ -436,7 +421,7 @@ If the investigation were continued, the identified indicators could be enriched
 * Downloaded files and file hashes
 * Application/server-side logs using the observed `X-Request-ID`
 
-These additional data sources could help determine whether the observed behavior represents legitimate application functionality, suspicious activity, or confirmed malicious activity.
+These sources could help determine whether the observed communication represents legitimate application functionality, suspicious activity, or confirmed malicious behavior.
 
 ---
 
@@ -467,13 +452,13 @@ These additional data sources could help determine whether the observed behavior
 # Key Lessons Learned
 
 * A PCAP should be analyzed as a **conversation**, not simply as individual packets.
-* Initial observations should be refined as deeper packet and payload inspection reveals additional evidence.
+* Initial observations can change as deeper packet and payload inspection reveals additional evidence.
 * IP addresses provide a starting point but do not independently establish maliciousness.
+* HTTP response bodies can contain important application-level evidence that may not be visible in packet summaries.
 * HTTP headers such as `Host`, `Referer`, `Location`, and `Set-Cookie` can provide valuable investigative context.
-* HTTP response bodies can contain important application-level evidence that is not visible in packet summaries.
 * A redirect is not inherently malicious; its significance depends on the surrounding behavior.
-* Correlating multiple artifacts can establish an application flow more reliably than relying on a single packet or indicator.
-* Unknown indicators should remain **unknown** until sufficient evidence exists to classify them.
+* Correlating multiple artifacts can establish an application flow more reliably than relying on a single indicator.
+* Suspicious activity should not automatically be classified as malicious without sufficient supporting evidence.
 * Strong security conclusions come from **correlating multiple sources of evidence** rather than relying on a single artifact.
 
 ---
