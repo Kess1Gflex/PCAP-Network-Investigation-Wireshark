@@ -338,10 +338,6 @@ Session established
 Additional session-associated requests
 ```
 
-### Screenshot
-
-<img src="screenshots/07-portal-analysis.png" width="900">
-
 ### Finding
 
 Multiple independent artifacts support the relationship between the portal and the external destination:
